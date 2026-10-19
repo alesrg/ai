@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 dataset = [
@@ -103,85 +105,89 @@ dataset = [
     ([10, 10], 100),
 ]
 
-b1 = np.array([1.1, 1.0])
-b2 = np.array([0.1])
-
-W1 = np.array([[0.5, 1.9], [1, 1.3]])
-
-W2 = np.array([1.7, 2])
-
-
-def main(W1, W2, b1, b2):
-
-    x1 = int(input("x1: "))
-    x2 = int(input("x2: "))
-    x = np.array([x1, x2])  # вектор входных данных
-    z = layer(x, W1, b1)
-    za = activation(z)
-    z2 = second_layer(za, W2, b2)
-    print(z2 * 10)
+lr = 0.1
+class Layer:
+    def __init__(self,X,input_size,neurons) -> None:
+        self.W = np.random.rand(input_size, neurons)
+        self.b = np.random.rand(neurons)
+        self.X = np.array(X)
+        self.input_size = input_size#кол во входов в слой
+        self.neurons = neurons#кол во нейронов в слое
 
 
-def layer(x, W1, b1):
-    z = x @ W1 + b1
-    return z
+    def activation(self):
+        z = self.X @ self.W + self.b#сумма нейрона
+        self.z = z
+        a = 1/(1+(math.e**(-z)))#активация сигмоидой
+        self.a = a
+        return a
+
+    def Loss(self,y):
+        loss = (np.sum(self.a) - y)**2 #функция лосса на весь слой
+        self.loss = loss
+        return loss
+
+    def der(self,da):
+        
+        dz = self.a * (1 -self.a) #производная по активации
+        dw = np.outer(self.X, da * dz) #производная лосса по весам
+        self.dw = dw
+        db = da * dz# производная для байасов
+        self.db = db
+        dX = self.W @ db
+        return dw,db,dX
+
+    def update(self):
+        self.W -= lr * self.dw
+        self.b -= lr * self.db
+
+layer1,layer2,layer3 = Layer([1,1],2,8),Layer(np.zeros(8), 8, 32),Layer(np.zeros(32),32,1)
+
+def forward(layer1,layer2,layer3):
+    
+    a1 = layer1.activation()
+    layer2.X = a1
+    a2 = layer2.activation()
+    layer3.X = a2
+    a3 = layer3.activation()
+    return a3 #ответ нейросети
+    
+def backward(layer1,layer2,layer3,y):
+    #dXn это производная по входам в нейрон и используеться дла передачи на след слой так же da n
+    loss = layer3.Loss(y)#лосс по последнему слою с данными обучения
+    da3 = 2 * (np.sum(layer3.a) - y)#производная функции активации по лоссу последнего слоя  по 3у слою
+    dw3,db3,dX3 = layer3.der(da3)#градиент производных для 3е слоя
+    dw2,db2,dX2 = layer2.der(dX3)#передача ошибки в пред слой 
+    dw, db, dX = layer1.der(dX2)#передача ошибки в самый первый слой 
+    #обновление весов 1 2 3 слоев
+    layer1.update()
+    layer2.update()
+    layer3.update()
+    return loss
 
 
-def activation(z):
-    za = np.maximum(0, z)
-    return za  # во второй слой передаються активированный нейроны
-
-
-def second_layer(za, W2, b2):
-    z2 = za @ W2 + b2
-    return z2
-
-
-def L(z, y):  # функция лосса
-    return (z[0] - (y/10)) ** 2
-
-
-def pr(pred, y, x, za, z, W3, b1, b2):
-    proizLoss = 2 * (pred - (y / 10))  # производная лосса по предиктион
-
-    dprW2 = proizLoss * za  # градиент по weight второго слоя
-    dprZ1 = (proizLoss * W2) * (z > 0)  # производная для весов 1 слоя через веса 2
-    dprW1 = np.outer(x, dprZ1)
-    b2 = proizLoss
-    b1 = dprZ1
-    return dprW1, dprW2, b1, b2
-
-
-def train(W1, W2, b1, b2):
-    loss = 10
-    iter = 1
-    lr = 0.0001
-
-    while loss >= 0.01 and iter <= 25000:
+def train(layer1,layer2,layer3):
+    epoch = 0
+    
+    loss = 1
+    while loss >= 0.00001 and epoch < 200000:
         total_loss = 0
-        for x, y in dataset:
-            z = layer(x, W1, b1)
-            za = activation(z)
-            z2 = second_layer(za, W2, b2)
-            sample_loss = L(z2, y)
-            dprW1, dprW2, dprb1, dprb2 = pr(z2, y, x, za, z, W2, b1, b2)
-            W2 -= lr * dprW2
-            W1 -= lr * dprW1
-            b1 -= lr * dprb1
-            b2 -= lr * dprb2
-            total_loss += sample_loss
-        loss = total_loss / len(dataset)
+        for x,y in dataset:
+             layer1.X = np.array(x) / 10 #нормализация данных
+             y = y / 100 #нормализация данных
+             forward(layer1,layer2,layer3)
+             total_loss += backward(layer1,layer2,layer3,y)
+        epoch += 1
+        loss = total_loss/len(dataset)     
+        if epoch % 1000 == 0:
+            print(f'epoch: {epoch}, loss: {loss}')
+             
+train(layer1,layer2,layer3)         
 
-        iter += 1
-        if iter % 1000 == 0:
-            print(f"loss: {loss}")
-            lr *= 0.95
-            print(f"iteration: {iter - 1}")
+def main(layer1,layer2,layer3):
+    layer1.X = [float(input('X1: '))/10, float(input('X2:'))/10]
+    pred = forward(layer1,layer2,layer3)
+    print(f'Ответ нейросети: {pred*100}')
 
-    print("обучения закончно")
-    while True:
-        main(W1, W2, b1, b2)
-
-
-if __name__ == "__main__":
-    train(W1, W2, b1, b2)
+while True:
+    main(layer1,layer2,layer3)
